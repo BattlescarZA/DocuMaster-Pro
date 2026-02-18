@@ -1,50 +1,51 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
 
-// Ensure uploads directory exists
-const uploadPath = process.env.UPLOAD_PATH || './uploads';
-if (!fs.existsSync(uploadPath)) {
-  fs.mkdirSync(uploadPath, { recursive: true });
+const uploadsDir = process.env.UPLOAD_DIR || './uploads';
+
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Create company-specific subdirectory
-    const companyName = req.companyName || 'default';
-    const companyPath = path.join(uploadPath, companyName);
-    
-    if (!fs.existsSync(companyPath)) {
-      fs.mkdirSync(companyPath, { recursive: true });
+    const companyDir = path.join(uploadsDir, req.companyName || 'default');
+    if (!fs.existsSync(companyDir)) {
+      fs.mkdirSync(companyDir, { recursive: true });
     }
-    
-    cb(null, companyPath);
+    cb(null, companyDir);
   },
   filename: (req, file, cb) => {
-    // Generate unique filename with original extension
-    const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
   },
 });
 
-// File filter for allowed extensions
 const fileFilter = (req, file, cb) => {
-  const allowedExtensions = process.env.ALLOWED_EXTENSIONS 
-    ? process.env.ALLOWED_EXTENSIONS.split(',')
-    : ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.mp4', '.webm'];
+  const allowedMimes = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'application/zip',
+  ];
   
-  const ext = path.extname(file.originalname).toLowerCase();
-  
-  if (allowedExtensions.includes(ext)) {
+  if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error(`File type not allowed: ${ext}`), false);
+    cb(new Error('Invalid file type. Only documents, images, and archives are allowed.'), false);
   }
 };
 
-// Configure multer
 const upload = multer({
   storage,
   fileFilter,
@@ -53,26 +54,4 @@ const upload = multer({
   },
 });
 
-// Error handling middleware for multer
-const handleUploadError = (err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ 
-        message: 'File too large',
-        maxSize: process.env.MAX_FILE_SIZE || '50MB'
-      });
-    }
-    return res.status(400).json({ message: `Upload error: ${err.message}` });
-  }
-  
-  if (err) {
-    return res.status(400).json({ message: err.message });
-  }
-  
-  next();
-};
-
-module.exports = {
-  upload,
-  handleUploadError,
-};
+module.exports = upload;
